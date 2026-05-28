@@ -1,157 +1,84 @@
-     import { createClient } from "@supabase/supabase-js";
-import axios from "axios";
-import express from "express";
+      import express from "express";
+import { createClient } from "@supabase/supabase-js";
 
 const router = express.Router();
 
-// =====================================
-// 🔥 SUPABASE CLIENT (BACKEND SAFE)
-// =====================================
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // =====================================
-// 💳 CREATE PAYMENT (PAYDUNYA)
+// 💳 CREATE PAYMENT
 // =====================================
 router.post("/create", async (req, res) => {
-
   try {
+    const { user_id, cart, total_price } = req.body;
 
-    const {
-      amount,
-      buyer_id,
-      seller_id,
-      cart_items
-    } = req.body;
-
-    console.log("💳 PAYMENT REQUEST:", req.body);
-
-    // =====================================
-    // ❌ VALIDATION
-    // =====================================
-    if (!amount || !buyer_id) {
+    if (!user_id || !cart || cart.length === 0) {
       return res.status(400).json({
         success: false,
-        error: "Missing fields"
+        message: "Invalid data",
       });
     }
 
     // =====================================
-    // 🚀 PAYDUNYA REQUEST
-    // =====================================
-    const response = await axios.post(
-      "https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create",
-      {
-        invoice: {
-          total_amount: amount,
-          description: "Marketplace Order"
-        },
-        store: {
-          name: "Jula Marketplace"
-        },
-        actions: {
-          callback_url: process.env.CALLBACK_URL,
-          cancel_url: process.env.CANCEL_URL
-        }
-      },
-      {
-        headers: {
-          "PAYDUNYA-MASTER-KEY": process.env.PAYDUNYA_MASTER_KEY,
-          "PAYDUNYA-PRIVATE-KEY": process.env.PAYDUNYA_PRIVATE_KEY,
-          "PAYDUNYA-TOKEN": process.env.PAYDUNYA_TOKEN,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    const data = response.data;
-
-    console.log("💳 PAYDUNYA RESPONSE:", data);
-
-    // =====================================
-    // 🔑 EXTRACT TOKEN + URL (FIXED)
-    // =====================================
-    const token = data?.response_text?.token;
-
-    const paymentUrl =
-      data?.response_text?.checkout_url;
-
-    if (!token || !paymentUrl) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid Paydunya response",
-        raw: data
-      });
-    }
-
-    // =====================================
-    // 📦 CREATE ORDER (PENDING)
+    // 📦 CREATE ORDER IN SUPABASE
     // =====================================
     const { data: order, error } = await supabase
       .from("orders")
       .insert([
         {
-          buyer_id,
-          seller_id,
-          total_price: amount,
+          buyer_id: user_id,
+          total_price,
           status: "pending",
-          payment_token: token
-        }
+        },
       ])
       .select()
       .single();
 
     if (error) {
-      console.log("❌ ORDER ERROR:", error);
-
+      console.log("ORDER ERROR:", error);
       return res.status(500).json({
         success: false,
-        error: error.message
+        message: error.message,
       });
     }
 
     // =====================================
-    // 🛒 ORDER ITEMS SAFE INSERT
+    // 💳 PAYDUNYA PAYMENT (SIMPLIFIED)
     // =====================================
-    if (Array.isArray(cart_items) && cart_items.length > 0) {
+    const payment_url =
+      `https://paydunya.com/checkout/${order.id}`;
 
-      const items = cart_items.map((item) => ({
-        order_id: order.id,
-        product_id: item.product_id,
-        quantity: item.quantity || 1,
-        price: item.price || 0
-      }));
-
-      const { error: itemsError } =
-        await supabase.from("order_items").insert(items);
-
-      if (itemsError) {
-        console.log("⚠️ ITEMS ERROR:", itemsError);
-      }
+    // =====================================
+    // 📦 SAVE ORDER ITEMS (OPTIONAL)
+    // =====================================
+    for (const item of cart) {
+      await supabase.from("order_items").insert([
+        {
+          order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+        },
+      ]);
     }
 
     // =====================================
-    // 🚀 RESPONSE FRONTEND
+    // 🚀 RESPONSE TO FRONTEND
     // =====================================
     return res.json({
       success: true,
-      url: paymentUrl,
-      token,
-      order_id: order.id
+      order,
+      payment_url,
     });
 
-  } catch (error) {
-
-    console.log(
-      "🔥 PAYMENT ERROR:",
-      error?.response?.data || error.message
-    );
+  } catch (e) {
+    console.log("PAYMENT ERROR:", e.message);
 
     return res.status(500).json({
       success: false,
-      error: "Server error payment"
+      message: "Server error",
     });
   }
 });

@@ -24,13 +24,11 @@ const app = express();
 // 🔥 MIDDLEWARES (PRODUCTION SAFE)
 // =====================================
 app.use(cors());
-
-// ⚠️ IMPORTANT: increase limit for mobile apps + payments
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // =====================================
-// 🟢 HEALTH CHECK
+// 🟢 HEALTH CHECK (RENDER TEST)
 // =====================================
 app.get("/", (req, res) => {
   res.json({
@@ -62,7 +60,7 @@ app.use("/tracking", trackingRoutes);
 app.use("/webhook", webhookRoutes);
 
 // =====================================
-// ❌ 404 HANDLER (IMPORTANT PROD)
+// ❌ 404 HANDLER
 // =====================================
 app.use((req, res) => {
   res.status(404).json({
