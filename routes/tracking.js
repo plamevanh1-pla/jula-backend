@@ -4,7 +4,7 @@ import express from "express";
 const router = express.Router();
 
 // =====================================
-// 🔥 SUPABASE
+// 🔥 SUPABASE CONNECTION
 // =====================================
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -12,98 +12,81 @@ const supabase = createClient(
 );
 
 // =====================================
-// 📦 VALID STATUS
+// 📍 UPDATE LIVE GPS POSITION
 // =====================================
-const allowedStatus = [
-  "pending",
-  "paid",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-];
-
-// =====================================
-// 🚚 GET TRACKING (PRO)
-// =====================================
-router.get("/:orderId", async (req, res) => {
+router.post("/update", async (req, res) => {
   try {
-    const { orderId } = req.params;
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", orderId)
-      .single();
+    const { order_id, lat, lng } = req.body;
 
-    if (error || !data) {
-      return res.status(404).json({
+    if (!order_id || !lat || !lng) {
+      return res.status(400).json({
         success: false,
-        error: "Order not found",
+        message: "Missing data",
+      });
+    }
+
+    const { error } = await supabase
+      .from("delivery_tracking")
+      .upsert([
+        {
+          order_id,
+          lat,
+          lng,
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: error.message,
       });
     }
 
     return res.json({
       success: true,
-      tracking: {
-        order_id: data.id,
-        status: data.status,
-        total_price: data.total_price,
-        created_at: data.created_at,
-      },
+      message: "GPS updated successfully",
     });
 
   } catch (e) {
     return res.status(500).json({
       success: false,
-      error: "Tracking failed",
+      message: e.message,
     });
   }
 });
 
 // =====================================
-// 🚚 UPDATE TRACKING (SECURE)
+// 📍 GET LIVE POSITION BY ORDER ID
 // =====================================
-router.put("/update/:orderId", async (req, res) => {
+router.get("/:order_id", async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const { status } = req.body;
 
-    // 🔐 VALIDATION STATUS
-    if (!allowedStatus.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid status",
-      });
-    }
+    const { order_id } = req.params;
 
-    // 🔥 UPDATE ORDER
     const { data, error } = await supabase
-      .from("orders")
-      .update({
-        status,
-        updated_at: new Date(),
-      })
-      .eq("id", orderId)
-      .select()
+      .from("delivery_tracking")
+      .select("*")
+      .eq("order_id", order_id)
       .single();
 
-    if (error || !data) {
+    if (error) {
       return res.status(500).json({
         success: false,
-        error: error.message,
+        message: error.message,
       });
     }
 
     return res.json({
       success: true,
-      order: data,
+      tracking: data,
     });
 
   } catch (e) {
     return res.status(500).json({
       success: false,
-      error: "Update tracking failed",
+      message: e.message,
     });
   }
 });

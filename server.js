@@ -3,18 +3,17 @@ import dotenv from "dotenv";
 import express from "express";
 
 // =====================================
-// 🔥 ENV
+// 🔥 LOAD ENV
 // =====================================
 dotenv.config();
 
 // =====================================
-// 🔥 ROUTES
+// 🚀 IMPORT ROUTES
 // =====================================
 import ordersRoutes from "./routes/orders.js";
 import paymentRoutes from "./routes/payment.js";
 import trackingRoutes from "./routes/tracking.js";
 import webhookRoutes from "./routes/webhook.js";
-import adminRoutes from "./routes/admin.js";
 
 // =====================================
 // 🚀 INIT APP
@@ -25,11 +24,15 @@ const app = express();
 // 🔥 MIDDLEWARES
 // =====================================
 app.use(cors());
+
 app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
+
+app.use(express.urlencoded({
+  extended: true,
+}));
 
 // =====================================
-// 🟢 HEALTH CHECK (RENDER)
+// 🟢 HEALTH CHECK
 // =====================================
 app.get("/", (req, res) => {
   res.json({
@@ -56,14 +59,9 @@ app.use("/orders", ordersRoutes);
 app.use("/tracking", trackingRoutes);
 
 // =====================================
-// 🔔 WEBHOOK ROUTES (PAYDUNYA)
+// 🔔 WEBHOOK ROUTES
 // =====================================
 app.use("/webhook", webhookRoutes);
-
-// =====================================
-// 🧠 ADMIN ROUTES
-// =====================================
-app.use("/admin", adminRoutes);
 
 // =====================================
 // ❌ 404 HANDLER
@@ -81,6 +79,13 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
+
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
+
+  console.log(
+    `📦 Environment: ${
+      process.env.NODE_ENV || "development"
+    }`
+  );
+
 });
