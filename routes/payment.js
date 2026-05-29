@@ -1,4 +1,4 @@
-      import { createClient } from "@supabase/supabase-js";
+       import { createClient } from "@supabase/supabase-js";
 import express from "express";
 
 const router = express.Router();
@@ -9,36 +9,55 @@ const supabase = createClient(
 );
 
 // =====================================
-// 💳 CREATE PAYMENT
+// 💳 CREATE PAYMENT ORDER (PRO)
 // =====================================
 router.post("/create", async (req, res) => {
-  try {
-    const { user_id, cart, total_price } = req.body;
 
-    if (!user_id || !cart || cart.length === 0) {
+  try {
+
+    const { user_id, cart } = req.body;
+
+    if (!user_id || !cart?.length) {
+
       return res.status(400).json({
         success: false,
-        message: "Invalid data",
+        message: "Invalid cart",
       });
     }
 
     // =====================================
-    // 📦 CREATE ORDER IN SUPABASE
+    // 📦 CALCUL SERVER PRICE (IMPORTANT)
     // =====================================
-    const { data: order, error } = await supabase
-      .from("orders")
-      .insert([
-        {
-          buyer_id: user_id,
-          total_price,
-          status: "pending",
-        },
-      ])
-      .select()
-      .single();
+    let total_price = 0;
+
+    for (const item of cart) {
+
+      total_price +=
+        item.price * item.quantity;
+    }
+
+    // =====================================
+    // 📦 CREATE ORDER
+    // =====================================
+    const { data: order, error } =
+      await supabase
+
+        .from("orders")
+
+        .insert([
+          {
+            buyer_id: user_id,
+            total_price,
+            status: "pending",
+          },
+        ])
+
+        .select()
+
+        .single();
 
     if (error) {
-      console.log("ORDER ERROR:", error);
+
       return res.status(500).json({
         success: false,
         message: error.message,
@@ -46,35 +65,52 @@ router.post("/create", async (req, res) => {
     }
 
     // =====================================
-    // 💳 PAYDUNYA PAYMENT (SIMPLIFIED)
+    // 📦 INSERT ITEMS (WITH SELLER ID)
+    // =====================================
+    const items = cart.map((item) => ({
+      order_id: order.id,
+      product_id: item.product_id,
+      seller_id: item.seller_id,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
+    const { error: itemError } =
+      await supabase
+        .from("order_items")
+        .insert(items);
+
+    if (itemError) {
+
+      return res.status(500).json({
+        success: false,
+        message:
+          itemError.message,
+      });
+    }
+
+    // =====================================
+    // 💳 PAYMENT URL (PAYDUNYA)
     // =====================================
     const payment_url =
       `https://paydunya.com/checkout/${order.id}`;
 
     // =====================================
-    // 📦 SAVE ORDER ITEMS (OPTIONAL)
-    // =====================================
-    for (const item of cart) {
-      await supabase.from("order_items").insert([
-        {
-          order_id: order.id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-        },
-      ]);
-    }
-
-    // =====================================
-    // 🚀 RESPONSE TO FRONTEND
+    // 🚀 RESPONSE
     // =====================================
     return res.json({
       success: true,
-      order,
+      order_id: order.id,
+      total_price,
       payment_url,
     });
 
   } catch (e) {
-    console.log("PAYMENT ERROR:", e.message);
+
+    console.log(
+      "PAYMENT ERROR:",
+      e.message
+    );
 
     return res.status(500).json({
       success: false,

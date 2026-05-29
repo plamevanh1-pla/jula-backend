@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+ import { createClient } from "@supabase/supabase-js";
 import express from "express";
 
 const router = express.Router();
@@ -9,83 +9,167 @@ const supabase = createClient(
 );
 
 // =====================================
+// 🔐 ADMIN MIDDLEWARE (BASIC SAFE CHECK)
+// =====================================
+const isAdmin = (req, res, next) => {
+
+  const adminKey = req.headers["x-admin-key"];
+
+  if (adminKey !== process.env.ADMIN_SECRET) {
+
+    return res.status(403).json({
+      success: false,
+      message: "Unauthorized",
+    });
+  }
+
+  next();
+};
+
+// =====================================
 // 📦 GET ALL ORDERS (ADMIN)
 // =====================================
-router.get("/orders", async (req, res) => {
+router.get("/orders", isAdmin, async (req, res) => {
+
   try {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: false });
+
+    const { data, error } =
+      await supabase
+        .from("orders")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        });
 
     if (error) {
-      return res.status(500).json({ error: error.message });
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
     }
 
-    res.json({
+    return res.json({
       success: true,
       orders: data,
     });
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+
+    return res.status(500).json({
+      success: false,
+      message: e.message,
+    });
   }
 });
 
 // =====================================
 // 📦 GET SINGLE ORDER
 // =====================================
-router.get("/orders/:id", async (req, res) => {
+router.get("/orders/:id", isAdmin, async (req, res) => {
+
   try {
+
     const { id } = req.params;
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", id)
-      .single();
+    const { data, error } =
+      await supabase
+        .from("orders")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
 
     if (error) {
-      return res.status(500).json({ error: error.message });
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
     }
 
-    res.json({
+    if (!data) {
+
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    return res.json({
       success: true,
       order: data,
     });
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+
+    return res.status(500).json({
+      success: false,
+      message: e.message,
+    });
   }
 });
 
 // =====================================
-// 🚚 UPDATE ORDER STATUS
+// 🚚 UPDATE ORDER STATUS (SAFE)
 // =====================================
-router.put("/orders/:id/status", async (req, res) => {
+router.put("/orders/:id/status", isAdmin, async (req, res) => {
+
   try {
+
     const { id } = req.params;
     const { status } = req.body;
 
-    const { data, error } = await supabase
-      .from("orders")
-      .update({ status })
-      .eq("id", id)
-      .select()
-      .single();
+    // =====================================
+    // 🔐 VALID STATUS CHECK
+    // =====================================
+    const allowedStatus = [
+      "pending",
+      "accepted",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
 
-    if (error) {
-      return res.status(500).json({ error: error.message });
+    if (!allowedStatus.includes(status)) {
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status",
+      });
     }
 
-    res.json({
+    const { data, error } =
+      await supabase
+        .from("orders")
+        .update({
+          status,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+    if (error) {
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.json({
       success: true,
       message: "Status updated",
       order: data,
     });
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+
+    return res.status(500).json({
+      success: false,
+      message: e.message,
+    });
   }
 });
 
