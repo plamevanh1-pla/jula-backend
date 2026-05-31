@@ -9,7 +9,7 @@ const supabase = createClient(
 );
 
 // =====================================
-// 💳 CREATE PAYMENT ORDER (PRO)
+// 💳 CREATE PAYMENT ORDER (PRODUCTION SAFE)
 // =====================================
 router.post("/create", async (req, res) => {
 
@@ -18,7 +18,6 @@ router.post("/create", async (req, res) => {
     const { user_id, cart } = req.body;
 
     if (!user_id || !cart?.length) {
-
       return res.status(400).json({
         success: false,
         message: "Invalid cart",
@@ -26,38 +25,48 @@ router.post("/create", async (req, res) => {
     }
 
     // =====================================
-    // 📦 CALCUL SERVER PRICE (IMPORTANT)
+    // 🔐 SERVER PRICE VALIDATION (IMPORTANT SECURITY FIX)
     // =====================================
     let total_price = 0;
 
     for (const item of cart) {
 
-      total_price +=
-        item.price * item.quantity;
+      const { data: product, error } = await supabase
+        .from("products")
+        .select("price, seller_id")
+        .eq("id", item.product_id)
+        .single();
+
+      if (error || !product) {
+        return res.status(400).json({
+          success: false,
+          message: "Product not found",
+        });
+      }
+
+      total_price += product.price * item.quantity;
+
+      item.price = product.price;
+      item.seller_id = product.seller_id;
     }
 
     // =====================================
     // 📦 CREATE ORDER
     // =====================================
-    const { data: order, error } =
-      await supabase
-
-        .from("orders")
-
-        .insert([
-          {
-            buyer_id: user_id,
-            total_price,
-            status: "pending",
-          },
-        ])
-
-        .select()
-
-        .single();
+    const { data: order, error } = await supabase
+      .from("orders")
+      .insert([
+        {
+          buyer_id: user_id,
+          total_price,
+          status: "pending",
+          payment_status: "pending",
+        },
+      ])
+      .select()
+      .single();
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
@@ -65,7 +74,7 @@ router.post("/create", async (req, res) => {
     }
 
     // =====================================
-    // 📦 INSERT ITEMS (WITH SELLER ID)
+    // 📦 INSERT ORDER ITEMS
     // =====================================
     const items = cart.map((item) => ({
       order_id: order.id,
@@ -75,25 +84,21 @@ router.post("/create", async (req, res) => {
       price: item.price,
     }));
 
-    const { error: itemError } =
-      await supabase
-        .from("order_items")
-        .insert(items);
+    const { error: itemError } = await supabase
+      .from("order_items")
+      .insert(items);
 
     if (itemError) {
-
       return res.status(500).json({
         success: false,
-        message:
-          itemError.message,
+        message: itemError.message,
       });
     }
 
     // =====================================
-    // 💳 PAYMENT URL (PAYDUNYA)
+    // 💳 PAYMENT URL (SIMPLIFIED PAYDUNYA)
     // =====================================
-    const payment_url =
-      `https://paydunya.com/checkout/${order.id}`;
+    const payment_url = `https://paydunya.com/checkout/${order.id}`;
 
     // =====================================
     // 🚀 RESPONSE
@@ -107,10 +112,7 @@ router.post("/create", async (req, res) => {
 
   } catch (e) {
 
-    console.log(
-      "PAYMENT ERROR:",
-      e.message
-    );
+    console.log("PAYMENT ERROR:", e.message);
 
     return res.status(500).json({
       success: false,

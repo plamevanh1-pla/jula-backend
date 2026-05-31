@@ -1,4 +1,4 @@
- import { createClient } from "@supabase/supabase-js";
+  import { createClient } from "@supabase/supabase-js";
 import express from "express";
 
 const router = express.Router();
@@ -9,21 +9,47 @@ const supabase = createClient(
 );
 
 // =====================================
-// 🔐 ADMIN MIDDLEWARE (BASIC SAFE CHECK)
+// 🔐 ADMIN AUTH (PRODUCTION SAFE)
 // =====================================
-const isAdmin = (req, res, next) => {
+const isAdmin = async (req, res, next) => {
 
-  const adminKey = req.headers["x-admin-key"];
+  try {
 
-  if (adminKey !== process.env.ADMIN_SECRET) {
+    const userId = req.headers["x-user-id"];
 
-    return res.status(403).json({
+    if (!userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    // =====================================
+    // 🔐 CHECK ROLE FROM DATABASE (IMPORTANT UPGRADE)
+    // =====================================
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!profile || profile.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin only",
+      });
+    }
+
+    req.userId = userId;
+    next();
+
+  } catch (e) {
+
+    return res.status(500).json({
       success: false,
-      message: "Unauthorized",
+      message: e.message,
     });
   }
-
-  next();
 };
 
 // =====================================
@@ -33,16 +59,12 @@ router.get("/orders", isAdmin, async (req, res) => {
 
   try {
 
-    const { data, error } =
-      await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", {
-          ascending: false,
-        });
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
@@ -72,26 +94,16 @@ router.get("/orders/:id", isAdmin, async (req, res) => {
 
     const { id } = req.params;
 
-    const { data, error } =
-      await supabase
-        .from("orders")
-        .select("*")
-        .eq("id", id)
-        .maybeSingle();
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
-      });
-    }
-
-    if (!data) {
-
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
       });
     }
 
@@ -110,7 +122,7 @@ router.get("/orders/:id", isAdmin, async (req, res) => {
 });
 
 // =====================================
-// 🚚 UPDATE ORDER STATUS (SAFE)
+// 🚚 UPDATE ORDER STATUS (WITH AUDIT LOG)
 // =====================================
 router.put("/orders/:id/status", isAdmin, async (req, res) => {
 
@@ -119,9 +131,6 @@ router.put("/orders/:id/status", isAdmin, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    // =====================================
-    // 🔐 VALID STATUS CHECK
-    // =====================================
     const allowedStatus = [
       "pending",
       "accepted",
@@ -131,32 +140,44 @@ router.put("/orders/:id/status", isAdmin, async (req, res) => {
     ];
 
     if (!allowedStatus.includes(status)) {
-
       return res.status(400).json({
         success: false,
         message: "Invalid status",
       });
     }
 
-    const { data, error } =
-      await supabase
-        .from("orders")
-        .update({
-          status,
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
+    // =====================================
+    // 🚚 UPDATE ORDER
+    // =====================================
+    const { data, error } = await supabase
+      .from("orders")
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
       });
     }
+
+    // =====================================
+    // 🧾 AUDIT LOG (IMPORTANT PRO FEATURE)
+    // =====================================
+    await supabase.from("admin_logs").insert([
+      {
+        admin_id: req.userId,
+        action: "UPDATE_ORDER_STATUS",
+        target_id: id,
+        new_value: status,
+        created_at: new Date().toISOString(),
+      },
+    ]);
 
     return res.json({
       success: true,

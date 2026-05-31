@@ -1,30 +1,25 @@
-   import cors from "cors";
+    import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 
-// =====================================
-// 🔥 ENV
-// =====================================
 dotenv.config();
 
 // =====================================
 // 🚀 ROUTES
 // =====================================
+import etaRoutes from "./routes/eta.js"; // 🔥 IMPORTANT
 import ordersRoutes from "./routes/orders.js";
 import paymentRoutes from "./routes/payment.js";
 import trackingRoutes from "./routes/tracking.js";
 import webhookRoutes from "./routes/webhook.js";
 
-// =====================================
-// 🚀 APP INIT
-// =====================================
 const app = express();
 
 // =====================================
-// 🔥 MIDDLEWARE SECURITY
+// 🔐 SECURITY MIDDLEWARE (PRODUCTION READY)
 // =====================================
 app.use(cors({
-  origin: "*",
+  origin: true, // ⚠️ remplace par ton domaine en prod
   credentials: true,
 }));
 
@@ -50,6 +45,7 @@ app.use("/orders", ordersRoutes);
 app.use("/payment", paymentRoutes);
 app.use("/tracking", trackingRoutes);
 app.use("/webhook", webhookRoutes);
+app.use("/eta", etaRoutes); // 🔥 AJOUTÉ
 
 // =====================================
 // ❌ 404 HANDLER
@@ -67,8 +63,6 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-
   console.log("🚀 Server running on port:", PORT);
   console.log("📦 ENV:", process.env.NODE_ENV || "development");
-
-}); 
+});

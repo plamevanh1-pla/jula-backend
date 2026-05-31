@@ -9,13 +9,29 @@ const supabase = createClient(
 );
 
 // =====================================
-// 📦 GET ORDERS (FILTERED SAFE)
+// 🔐 SAFE AUTH CHECK (OPTION PRO)
+// =====================================
+// 👉 ici tu peux ajouter JWT plus tard
+const getUserFromRequest = (req) => {
+  return req.headers["x-user-id"]; // simple MVP safe
+};
+
+// =====================================
+// 📦 GET ORDERS (SECURE PRO)
 // =====================================
 router.get("/", async (req, res) => {
 
   try {
 
-    const { role, user_id } = req.query;
+    const user_id = getUserFromRequest(req);
+    const role = req.query.role;
+
+    if (!user_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
     let query = supabase
       .from("orders")
@@ -23,22 +39,19 @@ router.get("/", async (req, res) => {
       .order("created_at", { ascending: false });
 
     // =====================================
-    // 🔐 ROLE FILTER
+    // 🔐 ROLE FILTER (SECURE VERSION)
     // =====================================
     if (role === "client") {
-
       query = query.eq("buyer_id", user_id);
     }
 
     if (role === "seller") {
-
       query = query.eq("seller_id", user_id);
     }
 
     const { data, error } = await query;
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
@@ -66,17 +79,23 @@ router.get("/:id", async (req, res) => {
 
   try {
 
+    const user_id = getUserFromRequest(req);
     const { id } = req.params;
 
-    const { data, error } =
-      await supabase
-        .from("orders")
-        .select("*")
-        .eq("id", id)
-        .maybeSingle();
+    if (!user_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
@@ -84,10 +103,22 @@ router.get("/:id", async (req, res) => {
     }
 
     if (!data) {
-
       return res.status(404).json({
         success: false,
         message: "Order not found",
+      });
+    }
+
+    // =====================================
+    // 🔐 SECURITY CHECK OWNER ACCESS
+    // =====================================
+    if (
+      data.buyer_id !== user_id &&
+      data.seller_id !== user_id
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
       });
     }
 
@@ -106,18 +137,23 @@ router.get("/:id", async (req, res) => {
 });
 
 // =====================================
-// 🚚 UPDATE ORDER STATUS (PRO SAFE)
+// 🚚 UPDATE STATUS (PRO SAFE)
 // =====================================
 router.put("/:id/status", async (req, res) => {
 
   try {
 
+    const user_id = getUserFromRequest(req);
     const { id } = req.params;
     const { status } = req.body;
 
-    // =====================================
-    // 🔐 VALID STATUS ONLY
-    // =====================================
+    if (!user_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
     const allowedStatus = [
       "pending",
       "accepted",
@@ -127,24 +163,49 @@ router.put("/:id/status", async (req, res) => {
     ];
 
     if (!allowedStatus.includes(status)) {
-
       return res.status(400).json({
         success: false,
         message: "Invalid status",
       });
     }
 
-    const { error } = await supabase
+    // =====================================
+    // 🔐 CHECK ORDER FIRST
+    // =====================================
+    const { data: order } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // =====================================
+    // 🔐 ONLY SELLER CAN UPDATE
+    // =====================================
+    if (order.seller_id !== user_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only seller can update status",
+      });
+    }
+
+    const { data, error } = await supabase
       .from("orders")
       .update({
         status,
-        updated_at:
-          new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq("id", id)
+      .select()
+      .single();
 
     if (error) {
-
       return res.status(500).json({
         success: false,
         message: error.message,
@@ -154,7 +215,7 @@ router.put("/:id/status", async (req, res) => {
     return res.json({
       success: true,
       message: "Order updated",
-      status,
+      order: data,
     });
 
   } catch (e) {
@@ -166,4 +227,4 @@ router.put("/:id/status", async (req, res) => {
   }
 });
 
-export default router; 
+export default router;
